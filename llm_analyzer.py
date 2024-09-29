@@ -1,4 +1,5 @@
 import os
+import re
 import tiktoken
 import argparse
 import tempfile
@@ -26,15 +27,19 @@ def clone_repository(repo_url, use_cache=False, cache_dir=None):
 
     return temp_dir
 
-def is_supported_file(filename, include_readme_license):
+def is_supported_file(filename, include_readme_license, match_pattern=None):
     supported_extensions = ('.py', '.js', '.java', '.cpp', '.h', '.cs', '.rb', '.go', '.rs', '.ts', '.md', '.txt', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.sh', '.bat', '.ps1')
+    
+    if match_pattern:
+        return re.search(match_pattern, filename) is not None
+    
     if filename.lower().endswith(supported_extensions):
         return True
     if include_readme_license and filename.upper() in ['README', 'LICENSE']:
         return True
     return False
 
-def analyze_repository(repo_path, include_readme_license, include_git_files, path=None):
+def analyze_repository(repo_path, include_readme_license, include_git_files, path=None, match_pattern=None):
     total_tokens = 0
     file_counts = {}
     all_files = []
@@ -50,7 +55,7 @@ def analyze_repository(repo_path, include_readme_license, include_git_files, pat
             
             all_files.append(relative_path)
             
-            if is_supported_file(file, include_readme_license):
+            if is_supported_file(file, include_readme_license, match_pattern):
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
@@ -88,10 +93,10 @@ def compare_with_llms(total_tokens):
 
     return sorted(recommendations, key=lambda x: x[2], reverse=True)
 
-def analyze_and_recommend(repo_path, include_readme_license, include_git_files, path=None):
-    total_tokens, file_counts, all_files = analyze_repository(repo_path, include_readme_license, include_git_files, path)
+def analyze_and_recommend(repo_path, include_readme_license, include_git_files, path=None, match_pattern=None):
+    total_tokens, file_counts, all_files = analyze_repository(repo_path, include_readme_license, include_git_files, path, match_pattern)
     
-    print(f"\nAll files found in the repository{' (filtered by path)' if path else ''}:")
+    print(f"\nAll files found in the repository{' (filtered by path)' if path else ''}{' (filtered by pattern)' if match_pattern else ''}:")
     for file in all_files:
         print(file)
     
@@ -104,6 +109,8 @@ def analyze_and_recommend(repo_path, include_readme_license, include_git_files, 
     print(f"\nAnalyzing repository: {repo_path}")
     if path:
         print(f"Analyzing path: {path}")
+    if match_pattern:
+        print(f"Matching files with pattern: {match_pattern}")
     print(f"Total tokens in repository: {total_tokens}")
     print("\nToken distribution by file:")
     for file, tokens in sorted(file_counts.items(), key=lambda x: x[1], reverse=True)[:10]:
@@ -124,13 +131,14 @@ if __name__ == "__main__":
     parser.add_argument("--path", help="Specify a path within the cloned directory to analyze. Only files within this path will be processed.")
     parser.add_argument("--cache", action="store_true", help="Use local cache for downloaded repositories.")
     parser.add_argument("--cache-dir", default=os.path.expanduser("~/.llm_analyzer_cache"), help="Directory to store cached repositories.")
+    parser.add_argument("--match", help="Regular expression pattern to match files for analysis.")
     args = parser.parse_args()
 
     try:
         print(f"Cloning or using cached repository: {args.repo_url}")
         repo_path = clone_repository(args.repo_url, use_cache=args.cache, cache_dir=args.cache_dir)
         print("Repository ready for analysis.")
-        analyze_and_recommend(repo_path, args.include_readme_license, args.include_git_files, args.path)
+        analyze_and_recommend(repo_path, args.include_readme_license, args.include_git_files, args.path, args.match)
     except Exception as e:
         print(f"An error occurred: {str(e)}")
     finally:
